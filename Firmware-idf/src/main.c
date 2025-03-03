@@ -144,37 +144,6 @@ static void tcp_server_task(void *arg)
     vTaskDelete(NULL);
 }
 
-// static void send_msg(msg_t *msg)
-// {
-//     static int errors = 0;
-//     if (client_socket < 0) return;
-
-//     // Prepare iovec structures for the header and data parts.
-//     struct iovec iov[2];
-//     iov[0].iov_base = (void *)&(msg->header);
-//     iov[0].iov_len  = sizeof(packet_header_t);
-//     iov[1].iov_base = (void *)&(msg->buffer);
-//     iov[1].iov_len  = msg->buffer.end * sizeof(int16_t);
-
-//     // Set up the message header.
-//     struct msghdr message;
-//     memset(&message, 0, sizeof(message));
-//     message.msg_iov    = iov;
-//     message.msg_iovlen = 2;
-
-//     // Send both parts in one call.
-//     int ret = sendmsg(client_socket, &message, 0);
-//     if (ret < 0) {
-//         if (errors++ > 10) {
-//             close(client_socket);
-//             client_socket = -1;
-//         }
-//         ESP_LOGE("SEND MSG", "Error sending message: errno %d", errno);
-//         return;
-//     }
-//     errors = 0;
-// }
-
 static void send_msg(msg_t *msg)
 {
     static int errors = 0;
