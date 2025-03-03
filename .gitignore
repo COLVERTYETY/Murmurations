@@ -22,3 +22,4 @@ build.ninja
 *.dat
 *.h5
 
+Firmware-idf/src/secrets.h
