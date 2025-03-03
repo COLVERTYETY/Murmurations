@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": ".."
+		},
+		{
+			"name": "Firmware",
+			"path": "../Firmware"
+		},
+		{
+			"name": "Firmware-idf",
+			"path": "../Firmware-idf"
+		}
+	],
+	"settings": {}
+}
