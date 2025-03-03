@@ -1,0 +1,24 @@
+# VSCode artifacts
+.vscode/
+
+# PlatformIO build output
+.pio/
+
+# CMake build artifacts (if applicable)
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+rules.ninja
+build.ninja
+.ninja_deps
+.ninja_log
+
+# Build output files (compiled binaries, maps, etc.)
+*.bin
+*.elf
+*.map
+
+# Large data files (or other non-source artifacts)
+*.dat
+*.h5
+
