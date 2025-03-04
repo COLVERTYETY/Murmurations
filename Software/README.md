@@ -46,7 +46,7 @@ The **live.py** app is a PyQt5-based graphical interface that connects to the ES
    - Click **Disconnect** to safely close the connection to the ESP32.
 
 
-## recorded.py Application Breakdown
+# recorded.py Application Breakdown
 
 ![image](./assets/recorded.png)
 

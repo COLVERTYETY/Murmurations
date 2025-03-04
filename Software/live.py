@@ -148,9 +148,6 @@ class DataRecordThread(QThread):
         if self.recording:
             self.data.append((source, ts, data))
 
-    
-
-
 
 class DataReceiverThread(QThread):
     # Signal: (source, timestamp, data)
