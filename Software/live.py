@@ -21,7 +21,7 @@ ch2c = {
 }
 
 # Constants
-ESP32_DEFAULT_IP = "192.168.41.114"
+ESP32_DEFAULT_IP = "10.42.0.24"
 PORT = 5000
 HEADER_FORMAT = "<BBHQ"  # source (1B), reserved (1B), length (2B), timestamp (8B)
 HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
@@ -199,11 +199,7 @@ class DataReceiverThread(QThread):
 
                     # Process based on source:
                     if source == 0:
-                        # Audio: pass all samples as a list.
-                        # data = [sample for sample in samples]
-                        # data = list(samples)
-                        # data = [int(sample) for sample in samples]
-                        # data = [sample - 32768 for sample in samples]
+                        #! Audio: this is not well understood
                         data = [sample - 32768 if sample >= 16384 else sample for sample in samples]
                     elif source == 1:
                         # Convert uint16_t to int16_t by shifting.
@@ -211,7 +207,7 @@ class DataReceiverThread(QThread):
                         adc_channels = {}
                         for s_val in samples:
                             ch = (s_val >> 12) & 0xF
-                            val = s_val & 0x0FFF
+                            val = s_val & 0xFFF 
                             adc_channels.setdefault(ch, []).append(val)
                         # print("ADC channels:", adc_channels)
                         data = adc_channels
@@ -259,8 +255,8 @@ class MainWindow(QMainWindow):
         self.adc_x = {}
 
         # Default decimation factor (display every Nth sample).
-        self.decimation_factor = 32
-        self.max_display_samples = 10000
+        self.decimation_factor = 1
+        self.max_display_samples = 5000
 
         # Create the audio plot.
         self.audio_plot = pg.PlotWidget(title="Audio Data (Source=0)")
@@ -302,8 +298,8 @@ class MainWindow(QMainWindow):
 
         #spinbox for maximum number of samples to display
         self.max_samples_spin = QSpinBox()
-        self.max_samples_spin.setRange(100, 50000)
-        self.max_samples_spin.setSingleStep(1000)
+        self.max_samples_spin.setRange(100, 10000)
+        self.max_samples_spin.setSingleStep(10000)
         self.max_samples_spin.setValue(self.max_display_samples)
         self.max_samples_spin.valueChanged.connect(self.max_samples)
 
@@ -455,7 +451,8 @@ class MainWindow(QMainWindow):
 
         # Update the ADC plot for each channel.
         for ch, data_list in self.adc_data.items():
-            x_list = self.adc_x[ch]
+            # x_list = self.adc_x[ch]
+            x_list = np.arange(len(data_list))
             decimated_x = x_list[-self.max_display_samples::self.decimation_factor]
             decimated_y = data_list[-self.max_display_samples::self.decimation_factor]
             if ch not in self.adc_curves:
