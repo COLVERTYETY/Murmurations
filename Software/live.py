@@ -4,13 +4,13 @@ import struct
 import time
 import h5py as h5
 import numpy as np
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, pyqtSlot
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, pyqtSlot, QTimer
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QPushButton, QLineEdit, QLabel, QSpinBox
+    QPushButton, QLineEdit, QLabel, QSpinBox, QDoubleSpinBox
 )
 import pyqtgraph as pg
-
+from scipy import signal
 ch2c = {
     0: "r",
     1: "c",
@@ -231,6 +231,7 @@ class DataReceiverThread(QThread):
         self.running = False
         self.wait()
 
+
 class MainWindow(QMainWindow):
     recordingConfigSignal = pyqtSignal(str, str, bool)
     def __init__(self):
@@ -309,6 +310,45 @@ class MainWindow(QMainWindow):
         # controls_layout = QHBoxLayout()
         controls_layout = QGridLayout()
         network_controls = QHBoxLayout()
+        # timer
+         # --------------------------
+        # 3) Timer / blink controls
+        # --------------------------
+        self.timer_layout = QHBoxLayout()
+        
+        # Spinbox for the number of repetitions (how many times to blink)
+        self.repetitions_spin = QSpinBox()
+        self.repetitions_spin.setRange(1, 9999)
+        self.repetitions_spin.setValue(30)  # example default
+        self.repetitions_spin.setSingleStep(1)
+
+        # Spinbox for the delay in seconds (time between blinks)
+        self.delay_spin = QDoubleSpinBox()
+        self.delay_spin.setRange(0.1, 60.0)
+        self.delay_spin.setValue(2.0)  # example default: 2 seconds
+        self.delay_spin.setSingleStep(0.1)
+
+        # Start button
+        self.start_timer_button = QPushButton("Start Timer")
+        self.start_timer_button.clicked.connect(self.start_blink_timer)
+
+        # Blink indicator - we’ll color this label
+        self.blink_label = QLabel("Blink Indicator")
+        self.blink_label.setAlignment(Qt.AlignCenter)
+        self.blink_label.setStyleSheet("background-color: gray;")
+
+        # Add items to timer_layout
+        self.timer_layout.addWidget(QLabel("Repetitions:"))
+        self.timer_layout.addWidget(self.repetitions_spin)
+        self.timer_layout.addWidget(QLabel("Delay (s):"))
+        self.timer_layout.addWidget(self.delay_spin)
+        self.timer_layout.addWidget(self.start_timer_button)
+        self.timer_layout.addWidget(self.blink_label)
+
+        controls_layout.addLayout(self.timer_layout, 3, 0)
+
+
+        # Add the network controls.
         network_controls.addWidget(QLabel("ESP32 IP:"))
         network_controls.addWidget(self.ip_edit)
         network_controls.addWidget(self.connect_button)
@@ -330,6 +370,8 @@ class MainWindow(QMainWindow):
         controls_widget = QWidget()
         controls_widget.setLayout(controls_layout)
 
+        
+
         # Main layout: two plots (audio and ADC) and the control panel.
         main_layout = QVBoxLayout()
         main_layout.addWidget(self.audio_plot)
@@ -341,6 +383,86 @@ class MainWindow(QMainWindow):
 
         self.data_thread = None
         self.data_record_thread.start()
+
+        # 6) Set up the QTimer for blinking
+        self.blink_timer = QTimer(self)
+        # e.g. update every 50 ms
+        self.blink_timer.setInterval(100)
+        self.blink_timer.timeout.connect(self.update_blink_indicator)
+
+        # Initialize blink-related variables
+        self.is_blinking = False
+        self.blinks_done = 0
+        self.last_blink_time = 0.0
+        self.current_delay = 2.0  # default
+        self.total_repetitions = 31  # default
+
+    def start_blink_timer(self):
+        """Start or stop the blinking process."""
+        if self.is_blinking:
+            # Stop the blinking process
+            self.is_blinking = False
+            self.blink_timer.stop()
+            self.blink_label.setStyleSheet("background-color: gray;")
+            self.blink_label.setText("Blink Stopped")
+            self.start_timer_button.setText("Start Timer")
+        else:
+            # Start the blinking process
+            self.total_repetitions = self.repetitions_spin.value()
+            self.current_delay = self.delay_spin.value()
+            self.blinks_done = 0
+            self.last_blink_time = time.time()
+            self.is_blinking = True
+            self.blink_label.setText("Blink Indicator")
+            self.blink_label.setStyleSheet("background-color: gray;")
+            self.blink_timer.start()
+            self.start_timer_button.setText("Stop Timer")
+
+    def update_blink_indicator(self):
+        """Called periodically by self.blink_timer to update the blink label color."""
+        if not self.is_blinking:
+            return
+
+        # If we've already completed all repetitions, stop
+        if self.blinks_done >= self.total_repetitions:
+            self.is_blinking = False
+            self.blink_timer.stop()
+            self.blink_label.setStyleSheet("background-color: gray;")
+            self.blink_label.setText("Done")
+            return
+
+        elapsed = time.time() - self.last_blink_time
+        fraction = elapsed / self.current_delay
+
+        # Once fraction >= 1, we consider it a "blink"
+        if fraction >= 1.0:
+            self.blinks_done += 1
+            self.last_blink_time = time.time()
+            fraction = 0.0  # reset fraction
+
+            # Optionally, show how many have been done:
+            self.blink_label.setText(f"Blink #{self.blinks_done}")
+
+        # fraction is between 0 and 1; use it to scale color intensity
+        # For example, let’s go from (128,128,128) at fraction=0 up to (255,0,0) at fraction=1
+        # or do any color logic you like
+        base_r = 128
+        base_g = 128
+        base_b = 128
+
+        # we want to approach e.g. a bright red as fraction → 1
+        # so let's define target color as (255, 0, 0)
+        target_r = 255
+        target_g = 0
+        target_b = 0
+
+        # Interpolate
+        curr_r = int(base_r + fraction * (target_r - base_r))
+        curr_g = int(base_g + fraction * (target_g - base_g))
+        curr_b = int(base_b + fraction * (target_b - base_b))
+
+        self.blink_label.setStyleSheet(f"background-color: rgb({curr_r}, {curr_g}, {curr_b});")
+
 
     def toggle_recording(self):
         self.recording = not self.recording
@@ -461,6 +583,7 @@ class MainWindow(QMainWindow):
                 # self.adc_curves[ch] = self.adc_plot.plot(decimated_x, decimated_y, pen=None, name=f"Ch {ch}")
             else:
                 self.adc_curves[ch].setData(decimated_x, decimated_y)
+        
         
 
 
