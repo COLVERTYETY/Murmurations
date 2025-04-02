@@ -125,7 +125,10 @@ def main():
                 for i, (ch_idx, ch_len) in enumerate(row_ch_info):
                     idx_end = idx_start + ch_len
                     ch_samples = row_samples[idx_start:idx_end]
-                    channels_data[i].extend(ch_samples)
+                    # Convert 12-bit 2's complement to int16
+                    ch_samples_converted = np.array(ch_samples, dtype=np.int16)
+                    ch_samples_converted = (ch_samples_converted & 0xFFF) - (ch_samples_converted & 0x800) * 2
+                    channels_data[i].extend(ch_samples_converted)
                     idx_start = idx_end
 
             # Now convert each channel's data list to a NumPy array
@@ -168,7 +171,7 @@ def main():
                 end = min(start + chunk_size, total_samples)
 
                 # Prepare a new figure
-                plt.figure()
+                plt.figure(figsize=(20,20))
 
                 # Plot each channel on the same figure
                 for i, ch_arr in enumerate(channel_arrays):

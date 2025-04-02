@@ -29,7 +29,7 @@ static const char *TAG = "MURMURATOR";
 
 // --- Microphone (I2S) Settings ---
 #define I2S_MIC_SAMPLE_RATE    48000
-#define ADC_SAMPLE_RATE        16000
+#define ADC_SAMPLE_RATE        8000
 #define MIC_BUFFER_SIZE        256    // number of 16-bit samples in a pa
 #define ADC_BUFFER_SIZE        256    // number of raw samples
 
@@ -222,10 +222,12 @@ void QADCmsg(uint8_t * buffer, int size){
         // Each conversion result occupies SOC_ADC_DIGI_RESULT_BYTES (likely 4 bytes for TYPE2).
         adc_digi_output_data_t *p = (adc_digi_output_data_t *)(buffer + i * SOC_ADC_DIGI_RESULT_BYTES);
         uint32_t chan = p->type2.channel;
-        uint32_t data = p->type2.data;
+        // uint32_t data = p->type2.data;
+        uint32_t data = p->val;
         // Format into 16 bits: upper 4 bits for channel, lower 12 bits for ADC data.
         sample.buffer.data[i] = ((chan & 0xF) << 12) | (data & 0x0FFF);
     }
+    // ESP_LOGI("ADC", "SENT %d", num_conv);
     xQueueSend(outbound_queue, &sample, portMAX_DELAY);
     // vTaskDelay(pdMS_TO_TICKS(10));
 }
@@ -298,19 +300,19 @@ static void adc_task(void *arg)
     // Configure ADC continuous mode for two channels.
     adc_continuous_config_t adc_cont_config = {
         .pattern_num = 2,
-        .sample_freq_hz = ADC_SAMPLE_RATE,  // ADC sampling frequency in Hz  // SOC_ADC_SAMPLE_FREQ_THRES_HIGH
-        .conv_mode = ADC_CONV_SINGLE_UNIT_1,  // Using ADC1
+        .sample_freq_hz = ADC_SAMPLE_RATE,     // ADC sampling frequency in Hz  // SOC_ADC_SAMPLE_FREQ_THRES_HIGH
+        .conv_mode = ADC_CONV_SINGLE_UNIT_1,   // Using ADC1
         .format = ADC_DIGI_OUTPUT_FORMAT_TYPE2,
-    };
+    }; 
     adc_digi_pattern_config_t adc_pattern[2] = {
         {
-            .atten = ADC_ATTEN_DB_0,
-            .channel = ADC1_CHANNEL_2,
+            .atten = ADC_ATTEN_DB_12,//ADC_ATTEN_DB_0,
+            .channel = ADC1_CHANNEL_1,
             .unit = ADC_UNIT_1,
             .bit_width = SOC_ADC_DIGI_MIN_BITWIDTH,
         },
         {
-            .atten = ADC_ATTEN_DB_0,
+            .atten = ADC_ATTEN_DB_12,
             .channel = ADC1_CHANNEL_3,
             .unit = ADC_UNIT_1,
             .bit_width = SOC_ADC_DIGI_MIN_BITWIDTH,

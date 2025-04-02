@@ -141,7 +141,7 @@ class InspectionMainWindow(QMainWindow):
 
         self.decimation_spin = QSpinBox()
         self.decimation_spin.setRange(1, 1024)
-        self.decimation_spin.setValue(32)
+        self.decimation_spin.setValue(1)
         self.decimation_spin.valueChanged.connect(self.update_plots)
 
         controls_layout = QHBoxLayout()
