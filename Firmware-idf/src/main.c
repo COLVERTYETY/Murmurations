@@ -62,40 +62,111 @@ typedef struct {
 #define SERVER_PORT 5000
 static int server_socket = -1;
 static int client_socket = -1;
+static int current_credential = 0; // 0: use SSID/PWORD, 1: use SSID2/PWORD2
+
 
 QueueHandle_t outbound_queue;
 
 // --- WiFi Initialization (Station Mode) ---
-static void wifi_init_sta(void)
+// static void wifi_init_sta(void)
+// {
+//     esp_err_t ret = nvs_flash_init();
+//     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+//       ESP_ERROR_CHECK(nvs_flash_erase());
+//       ret = nvs_flash_init();
+//     }
+//     ESP_ERROR_CHECK(ret);
+
+//     ESP_ERROR_CHECK(esp_netif_init());
+//     ESP_ERROR_CHECK(esp_event_loop_create_default());
+//     esp_netif_create_default_wifi_sta();
+
+//     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+//     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    
+    
+//     wifi_config_t wifi_config = {
+//         .sta = {
+//             .ssid = SSID,
+//             .password = PWORD,
+//             .threshold.authmode = WIFI_AUTH_WPA2_PSK,
+//         },
+//     };
+//     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+//     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+//     ESP_ERROR_CHECK(esp_wifi_start());
+//     esp_wifi_set_ps(WIFI_PS_NONE);
+//     ESP_LOGI(TAG, "WiFi initialization finished. Connecting...");
+//     ESP_ERROR_CHECK(esp_wifi_connect());
+// }
+static void wifi_event_handler(void* arg, esp_event_base_t event_base,
+    int32_t event_id, void* event_data) {
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        ESP_LOGI(TAG, "Disconnected. Toggling credentials.");
+
+        wifi_config_t wifi_config = {0};  // Initialize to zero
+        if (current_credential == 0) {
+            // Switch to secondary credentials
+            current_credential = 1;
+            strcpy((char*)wifi_config.sta.ssid, SSID2);
+            strcpy((char*)wifi_config.sta.password, PWORD2);
+        } else {
+            // Switch back to primary credentials
+            current_credential = 0;
+            strcpy((char*)wifi_config.sta.ssid, SSID);
+            strcpy((char*)wifi_config.sta.password, PWORD);
+        }
+        wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+        ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+        esp_wifi_connect();
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_CONNECTED) {
+        wifi_config_t wifi_config = {0};
+        ESP_ERROR_CHECK(esp_wifi_get_config(WIFI_IF_STA, &wifi_config));
+        ESP_LOGI(TAG, "Connected to network: %s", wifi_config.sta.ssid);
+    }
+}
+
+static void wifi_init_softap(void)
 {
+    // Initialize NVS
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-      ESP_ERROR_CHECK(nvs_flash_erase());
-      ret = nvs_flash_init();
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
 
+    // Init default network stack
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
-    esp_netif_create_default_wifi_sta();
 
+    // Create default AP. This line is different from station mode:
+    esp_netif_create_default_wifi_ap();
+
+    // Init Wi-Fi with default config
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-    
-    
-    wifi_config_t wifi_config = {
-        .sta = {
-            .ssid = SSID,
-            .password = PWORD,
-            .threshold.authmode = WIFI_AUTH_WPA2_PSK,
+
+    // Set the Wi-Fi mode to AP
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+
+    // Configure the access point’s parameters
+    wifi_config_t ap_config = {
+        .ap = {
+            .ssid = "Murmurator",     // <-- pick an SSID
+            .ssid_len = strlen("Murmurator"),
+            .channel = 1,
+            .password = "12345678",       // min 8 chars if using WPA2
+            .max_connection = 4,
+            .authmode = WIFI_AUTH_WPA2_PSK,
+            // .ssid_hidden = 0,          // optional
         },
     };
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
     ESP_ERROR_CHECK(esp_wifi_start());
-    esp_wifi_set_ps(WIFI_PS_NONE);
-    ESP_LOGI(TAG, "WiFi initialization finished. Connecting...");
-    ESP_ERROR_CHECK(esp_wifi_connect());
+
+    ESP_LOGI(TAG, "wifi_init_softap finished. SSID:%s password:%s channel:%d",
+             ap_config.ap.ssid, ap_config.ap.password, ap_config.ap.channel);
 }
 
 // --- TCP Server Task ---
@@ -244,7 +315,7 @@ static void mic_task(void *arg)
     /* Allocate a new RX channel and get the handle of this channel */
     i2s_new_channel(&chan_cfg, NULL, &rx_handle);
 
-    /* Setting the configurations, the slot configuration and clock configuration can be generated by the macros*/
+    /* Setting the configurations, the slot configuration and clock configuration can be generated by the macros*/  
     i2s_std_config_t std_cfg = {
         .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(I2S_MIC_SAMPLE_RATE),
         .slot_cfg = I2S_STD_MSB_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
@@ -346,6 +417,12 @@ void periodiclogger(void *arg)
             ESP_LOGI(TAG, "Failed to get network interface");
         }
 
+        // Optionally log the current SSID
+        wifi_config_t wifi_config = {0};
+        if (esp_wifi_get_config(WIFI_IF_STA, &wifi_config) == ESP_OK) {
+            ESP_LOGI(TAG, "Currently connected to network: %s", wifi_config.sta.ssid);
+        }
+
         int outBoundmsgs = uxQueueMessagesWaiting(outbound_queue);
         if (outBoundmsgs > 0 ){
             ESP_LOGI(TAG, "Outbound messages in queue: %d", outBoundmsgs);
@@ -354,10 +431,12 @@ void periodiclogger(void *arg)
     }
 }
 
+
 void app_main(void)
 {
     ESP_LOGI(TAG, "Starting streaming application");
-    wifi_init_sta();
+    // wifi_init_sta();
+    wifi_init_softap();
     
     // Create the TCP server task.
     xTaskCreate(tcp_server_task, "tcp_server", 4096, NULL, 5, NULL);
