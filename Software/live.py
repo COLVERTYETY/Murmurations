@@ -7,10 +7,14 @@ import numpy as np
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, pyqtSlot, QTimer
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QPushButton, QLineEdit, QLabel, QSpinBox, QDoubleSpinBox
+    QPushButton, QLineEdit, QLabel, QSpinBox, QDoubleSpinBox, QComboBox
 )
 import pyqtgraph as pg
 from scipy import signal
+
+# Add array of PIDs at the top
+DEFAULT_PIDS = ["ace", "aid", "day", "may", "me", "moo", "sue", "doom", "dude", "moose", "same", "seam", "seed", "key", "my", "sigh", "they", "way", "why", "woo", "dime", "make", "seek", "side", "wake", "weed", "ray", "she", "shy", "shoe", "us", "come", "rock", "rum", "shave", "shock", "vase", "wash", "murata", "medialab"]
+
 ch2c = {
     0: "r",
     1: "c",
@@ -78,7 +82,7 @@ class DataRecordThread(QThread):
                             self.PID, shape=(0,), maxshape=(None,),
                             dtype=record_dtype, chunks=True
                         )
-                    print("Recording started: file opened and dataset ready.")
+                    print(f"Recording started: file opened and dataset ready. Using PID: {self.PID}")
                 # If any new data has been added, write it out.
                 if self.data:
                     records_to_write = []
@@ -112,7 +116,7 @@ class DataRecordThread(QThread):
                             dataset.resize((new_size,))
                             dataset[old_size:new_size] = rec_array
                             file.flush()
-                            print(f"Wrote {rec_array.shape[0]} records to file.")
+                            print(f"Wrote {rec_array.shape[0]} records to file in PID {self.PID}.")
                         except Exception as e:
                             print("Error writing records:", e)
                 # Short sleep to avoid busy-looping.
@@ -240,6 +244,7 @@ class MainWindow(QMainWindow):
 
         self.recordFile = "recordings.h5"
         self.recordingPID = "records"
+        self.pids = DEFAULT_PIDS.copy()  # Use the default PIDs
 
         self.data_record_thread = DataRecordThread(self.recordFile)
         self.recordingConfigSignal.connect(self.data_record_thread.record)
@@ -268,14 +273,42 @@ class MainWindow(QMainWindow):
         self.adc_plot.addLegend()
         self.adc_curves = {}  # channel -> plot curve
         
-
         # Controls.
         self.ip_edit = QLineEdit(ESP32_DEFAULT_IP)
         self.connect_button = QPushButton("Connect")
         self.connect_button.clicked.connect(self.toggle_connection)
         
-        #data recording 
+        # PID Navigation Controls
+        self.pid_layout = QHBoxLayout()
+        self.pid_layout.addWidget(QLabel("PIDs:"))
         
+        # PID Combo Box
+        self.pid_combo = QComboBox()
+        self.pid_combo.addItems(self.pids)
+        self.pid_combo.setCurrentText(self.recordingPID)
+        self.pid_combo.currentTextChanged.connect(self.on_pid_changed)
+        self.pid_layout.addWidget(self.pid_combo)
+        
+        # Add PID Button
+        self.add_pid_button = QPushButton("Add PID")
+        self.add_pid_button.clicked.connect(self.add_new_pid)
+        self.pid_layout.addWidget(self.add_pid_button)
+        
+        # Remove PID Button
+        self.remove_pid_button = QPushButton("Remove PID")
+        self.remove_pid_button.clicked.connect(self.remove_current_pid)
+        self.pid_layout.addWidget(self.remove_pid_button)
+        
+        # Next/Previous PID buttons
+        self.prev_pid_button = QPushButton("Previous")
+        self.prev_pid_button.clicked.connect(self.previous_pid)
+        self.pid_layout.addWidget(self.prev_pid_button)
+        
+        self.next_pid_button = QPushButton("Next")
+        self.next_pid_button.clicked.connect(self.next_pid)
+        self.pid_layout.addWidget(self.next_pid_button)
+        
+        #data recording 
         self.recording = False
         self.record_button = QPushButton("Record")
         self.record_button.clicked.connect(self.toggle_recording)
@@ -287,8 +320,6 @@ class MainWindow(QMainWindow):
         self.recordingPID_edit = QLineEdit(self.recordingPID)
         self.recordingPID_edit.setEnabled(True)
 
-
-
         # Spin box for decimation factor: display 1 out of N samples.
         self.decimation_spin = QSpinBox()
         self.decimation_spin.setRange(1, 1024)
@@ -296,11 +327,10 @@ class MainWindow(QMainWindow):
         self.decimation_spin.setValue(self.decimation_factor)
         self.decimation_spin.valueChanged.connect(self.change_decimation)
         
-
         #spinbox for maximum number of samples to display
         self.max_samples_spin = QSpinBox()
         self.max_samples_spin.setRange(100, 10000)
-        self.max_samples_spin.setSingleStep(10000)
+        self.max_samples_spin.setSingleStep(100)
         self.max_samples_spin.setValue(self.max_display_samples)
         self.max_samples_spin.valueChanged.connect(self.max_samples)
 
@@ -309,6 +339,10 @@ class MainWindow(QMainWindow):
 
         # controls_layout = QHBoxLayout()
         controls_layout = QGridLayout()
+        
+        # Add PID controls first
+        controls_layout.addLayout(self.pid_layout, 0, 0)
+        
         network_controls = QHBoxLayout()
         # timer
          # --------------------------
@@ -332,7 +366,7 @@ class MainWindow(QMainWindow):
         self.start_timer_button = QPushButton("Start Timer")
         self.start_timer_button.clicked.connect(self.start_blink_timer)
 
-        # Blink indicator - we’ll color this label
+        # Blink indicator - we'll color this label
         self.blink_label = QLabel("Blink Indicator")
         self.blink_label.setAlignment(Qt.AlignCenter)
         self.blink_label.setStyleSheet("background-color: gray;")
@@ -345,32 +379,33 @@ class MainWindow(QMainWindow):
         self.timer_layout.addWidget(self.start_timer_button)
         self.timer_layout.addWidget(self.blink_label)
 
-        controls_layout.addLayout(self.timer_layout, 3, 0)
-
+        # Adjust grid layout to incorporate the PID navigation
+        controls_layout.addLayout(self.timer_layout, 4, 0)
 
         # Add the network controls.
         network_controls.addWidget(QLabel("ESP32 IP:"))
         network_controls.addWidget(self.ip_edit)
         network_controls.addWidget(self.connect_button)
-        controls_layout.addLayout(network_controls, 0, 0)
+        controls_layout.addLayout(network_controls, 1, 0)
+        
         recording_controls = QHBoxLayout()
         recording_controls.addWidget(QLabel("Record File:"))
         recording_controls.addWidget(self.recordFile_edit)
         recording_controls.addWidget(QLabel("Recording PID:"))
         recording_controls.addWidget(self.recordingPID_edit)
         recording_controls.addWidget(self.record_button)
-        controls_layout.addLayout(recording_controls, 1, 0)
+        controls_layout.addLayout(recording_controls, 2, 0)
+        
         display_controls = QHBoxLayout()
         display_controls.addWidget(QLabel("Max samples:"))
         display_controls.addWidget(self.max_samples_spin)
         display_controls.addWidget(QLabel("Decimation:"))
         display_controls.addWidget(self.decimation_spin)
         display_controls.addWidget(self.bps_label)
-        controls_layout.addLayout(display_controls, 2, 0)
+        controls_layout.addLayout(display_controls, 3, 0)
+        
         controls_widget = QWidget()
         controls_widget.setLayout(controls_layout)
-
-        
 
         # Main layout: two plots (audio and ADC) and the control panel.
         main_layout = QVBoxLayout()
@@ -396,6 +431,70 @@ class MainWindow(QMainWindow):
         self.last_blink_time = 0.0
         self.current_delay = 2.0  # default
         self.total_repetitions = 31  # default
+        
+        # Update the display to show the current PID
+        self.update_pid_display()
+
+    def on_pid_changed(self, pid):
+        """Handle when a user selects a different PID from the combo box"""
+        self.recordingPID = pid
+        self.recordingPID_edit.setText(pid)
+        print(f"Changed to PID: {pid}")
+        
+    def add_new_pid(self):
+        """Add a new PID to the list"""
+        new_pid = f"participant_{len(self.pids) + 1}"
+        self.pids.append(new_pid)
+        
+        # Update the combo box
+        current_index = self.pid_combo.currentIndex()
+        self.pid_combo.addItem(new_pid)
+        
+        # Select the new PID
+        self.pid_combo.setCurrentText(new_pid)
+        self.on_pid_changed(new_pid)
+        
+    def remove_current_pid(self):
+        """Remove the currently selected PID from the list"""
+        if len(self.pids) <= 1:
+            print("Cannot remove the last PID")
+            return
+            
+        current_pid = self.pid_combo.currentText()
+        current_index = self.pid_combo.currentIndex()
+        
+        # Remove from our list and combobox
+        self.pids.remove(current_pid)
+        self.pid_combo.removeItem(current_index)
+        
+        # Select the next available PID
+        self.recordingPID = self.pid_combo.currentText()
+        self.recordingPID_edit.setText(self.recordingPID)
+        print(f"Removed PID: {current_pid}, now using: {self.recordingPID}")
+        
+    def next_pid(self):
+        """Switch to the next PID in the list"""
+        current_index = self.pid_combo.currentIndex()
+        next_index = (current_index + 1) % self.pid_combo.count()
+        self.pid_combo.setCurrentIndex(next_index)
+        self.recordingPID = self.pid_combo.currentText()
+        self.recordingPID_edit.setText(self.recordingPID)
+        print(f"Switched to next PID: {self.recordingPID}")
+        
+    def previous_pid(self):
+        """Switch to the previous PID in the list"""
+        current_index = self.pid_combo.currentIndex()
+        prev_index = (current_index - 1) % self.pid_combo.count()
+        self.pid_combo.setCurrentIndex(prev_index)
+        self.recordingPID = self.pid_combo.currentText()
+        self.recordingPID_edit.setText(self.recordingPID)
+        print(f"Switched to previous PID: {self.recordingPID}")
+    
+    def update_pid_display(self):
+        """Update any UI elements that display the current PID"""
+        self.recordingPID_edit.setText(self.recordingPID)
+        # Update window title to show current PID
+        self.setWindowTitle(f"Live Murmurations - {self.recordingPID}")
 
     def start_blink_timer(self):
         """Start or stop the blinking process."""
@@ -444,7 +543,7 @@ class MainWindow(QMainWindow):
             self.blink_label.setText(f"Blink #{self.blinks_done}")
 
         # fraction is between 0 and 1; use it to scale color intensity
-        # For example, let’s go from (128,128,128) at fraction=0 up to (255,0,0) at fraction=1
+        # For example, let's go from (128,128,128) at fraction=0 up to (255,0,0) at fraction=1
         # or do any color logic you like
         base_r = 128
         base_g = 128
@@ -463,7 +562,6 @@ class MainWindow(QMainWindow):
 
         self.blink_label.setStyleSheet(f"background-color: rgb({curr_r}, {curr_g}, {curr_b});")
 
-
     def toggle_recording(self):
         self.recording = not self.recording
         if self.recording:
@@ -472,6 +570,11 @@ class MainWindow(QMainWindow):
             self.recordingPID = self.recordingPID_edit.text()
             self.recordFile_edit.setEnabled(False)
             self.recordingPID_edit.setEnabled(False)
+            self.pid_combo.setEnabled(False)
+            self.add_pid_button.setEnabled(False)
+            self.remove_pid_button.setEnabled(False)
+            self.next_pid_button.setEnabled(False)
+            self.prev_pid_button.setEnabled(False)
             # print("recording started:", self.recordFile, self.recordingPID)
             self.recordingConfigSignal.emit(self.recordFile, self.recordingPID, True)
         else:
@@ -481,7 +584,15 @@ class MainWindow(QMainWindow):
             self.recordingPID = self.recordingPID_edit.text()
             self.recordFile_edit.setEnabled(True)
             self.recordingPID_edit.setEnabled(True)
+            self.pid_combo.setEnabled(True)
+            self.add_pid_button.setEnabled(True)
+            self.remove_pid_button.setEnabled(True)
+            self.next_pid_button.setEnabled(True)
+            self.prev_pid_button.setEnabled(True)
             self.recordingConfigSignal.emit(self.recordFile, self.recordingPID, False)
+            
+            # Make sure the combobox is updated to match the current PID
+            self.pid_combo.setCurrentText(self.recordingPID)
 
     def change_decimation(self, value):
         self.decimation_factor = value
@@ -521,6 +632,11 @@ class MainWindow(QMainWindow):
             self.recordingConfigSignal.emit(self.recordFile, self.recordingPID, False)
             self.recordFile_edit.setEnabled(True)
             self.recordingPID_edit.setEnabled(True)
+            self.pid_combo.setEnabled(True)
+            self.add_pid_button.setEnabled(True)
+            self.remove_pid_button.setEnabled(True)
+            self.next_pid_button.setEnabled(True)
+            self.prev_pid_button.setEnabled(True)
             self.data_thread.stop()
             self.data_thread = None
             self.connect_button.setText("Connect")
@@ -584,7 +700,8 @@ class MainWindow(QMainWindow):
             else:
                 self.adc_curves[ch].setData(decimated_x, decimated_y)
         
-        
+        # Update window title to reflect current PID
+        self.setWindowTitle(f"Live Murmurations - {self.recordingPID}")
 
 
 if __name__ == "__main__":
