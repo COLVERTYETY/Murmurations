@@ -25,4 +25,5 @@ build.ninja
 
 Firmware-idf/src/secrets.h
 Software/data/
+Software/murmurations.code-workspace
 data

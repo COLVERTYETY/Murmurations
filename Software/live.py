@@ -13,7 +13,12 @@ import pyqtgraph as pg
 from scipy import signal
 
 # Add array of PIDs at the top
-DEFAULT_PIDS = ["ace", "aid", "day", "may", "me", "moo", "sue", "doom", "dude", "moose", "same", "seam", "seed", "key", "my", "sigh", "they", "way", "why", "woo", "dime", "make", "seek", "side", "wake", "weed", "ray", "she", "shy", "shoe", "us", "come", "rock", "rum", "shave", "shock", "vase", "wash", "murata", "medialab"]
+DEFAULT_PIDS = ["ace", "aid", "day", "may", "me", "moo", "sue", "doom", "dude",
+ "moose", "same", "seam", "seed", "key", "my", "sigh", "they", "way", "why",
+"woo", "dime", "make", "seek", "side", "wake", "weed", "ray", "she", "shy", 
+"shoe", "us", "come", "rock", "rum", "shave", "shock", "vase", "wash", "murata", "start", "stop",
+"medialab"]
+
 
 ch2c = {
     0: "r",
@@ -261,7 +266,7 @@ class MainWindow(QMainWindow):
         self.adc_x = {}
 
         # Default decimation factor (display every Nth sample).
-        self.decimation_factor = 1
+        self.decimation_factor = 16
         self.max_display_samples = 5000
 
         # Create the audio plot.
@@ -359,7 +364,7 @@ class MainWindow(QMainWindow):
         # Spinbox for the delay in seconds (time between blinks)
         self.delay_spin = QDoubleSpinBox()
         self.delay_spin.setRange(0.1, 60.0)
-        self.delay_spin.setValue(2.0)  # example default: 2 seconds
+        self.delay_spin.setValue(1.4)  # example default: 2 seconds
         self.delay_spin.setSingleStep(0.1)
 
         # Start button
