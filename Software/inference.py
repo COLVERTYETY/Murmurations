@@ -4,6 +4,7 @@ import struct
 import time
 import numpy as np
 import json
+from scipy import signal    
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, pyqtSlot, QTimer, QObject
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
@@ -14,6 +15,42 @@ import onnxruntime as ort
 
 import colorsys
 import zlib 
+
+def BPfilter( data, fs, lowcut_hz=None, highcut_hz=None):
+        """
+        Apply a bandpass Butterworth filter to the input data.
+        
+        Parameters:
+        data : array-like
+            The input signal to filter
+        fs : float
+            Sampling frequency in Hz
+        lowcut_hz : float, optional
+            Lower cutoff frequency in Hz. If None, defaults to 20 Hz
+        highcut_hz : float, optional
+            Upper cutoff frequency in Hz. If None, defaults to fs/4 Hz
+            
+        Returns:
+        array-like
+            The filtered signal
+        """
+        # Default cutoff frequencies if not provided.
+        if lowcut_hz is None:
+            lowcut_hz = 20  # Default lower cutoff of 20 Hz
+        if highcut_hz is None:
+            highcut_hz = fs/4  # Default upper cutoff at quarter of sampling rate
+        
+        # Convert cutoff frequencies to normalized units (0 to 1).
+        nyquist = fs / 2
+        low = lowcut_hz / nyquist
+        high = highcut_hz / nyquist
+        
+        # Create a 4th-order bandpass Butterworth filter.
+        b, a = signal.butter(2, [low, high], btype='band')
+        
+        # Apply zero-phase filtering using filtfilt.
+        filtered_data = signal.filtfilt(b, a, data)
+        return filtered_data
 
 def name_to_color(name, s=0.7, v=0.95):
     """
@@ -55,10 +92,14 @@ class normalizer():
         self.augment = augment
 
     def __call__(self, sample):
+        sample = BPfilter(sample, fs=8000, lowcut_hz=5, highcut_hz=3700)
         sample = (sample - self.mean) / (self.std*10)
         # adc1, adc2 = sample
         # adc1 = (adc1 - self.mean) / (self.std*10)
         # adc2 = (adc2 - self.mean) / (self.std*10)
+        # cast to float 32
+        sample = sample.astype(np.float32)
+         # if self.augment:
         return sample
 
 # ----- Inference Worker -----
@@ -111,6 +152,13 @@ class InferenceWorker(QObject):
         predictions = np.argmax(logits, axis=2).flatten()
         elapsed = time.time() - start_time
         self.inferenceDone.emit(predictions, elapsed)
+        # Print the top K predictions for debugging.
+        top_k = 5
+        top_k_indices = np.argsort(logits, axis=2)[:, :, -top_k:][0]
+        top_k_scores = np.sort(logits, axis=2)[:, :, -top_k:][0]
+        print("Top K predictions:")
+        for i in range(top_k):
+            print(f"Class: {top_k_indices[:, -1 - i]}")#, Score: {top_k_scores[:, -1 - i]}")
 
 # ----- Data Receiver Thread -----
 
@@ -416,7 +464,7 @@ class MainWindow(QMainWindow):
             return
         sample_count = self.inference_samples_spin.value()
         data_buffer = {}
-        for ch, samples in self.adc_data.items():
+        for ch, samples in sorted(self.adc_data.items()):
             if len(samples) < sample_count:
                 return
             # Keep only the most recent samples.
@@ -426,6 +474,32 @@ class MainWindow(QMainWindow):
         self.audio_data = self.audio_data[-sample_count:]
         self.inferenceRequest.emit(data_buffer)
         
+    # @pyqtSlot(object, float)
+    # def handle_inference_result(self, predictions, elapsed):
+    #     if elapsed > 0:
+    #         current_speed = 1.0 / elapsed
+    #         if current_speed > self.inference_max_speed:
+    #             self.inference_max_speed = current_speed
+    #             self.max_inference_label.setText(f"Max Inference Speed: {self.inference_max_speed:.2f} Hz")
+    #     if len(predictions) == 0:
+    #         return
+    #     # Use majority vote on predictions.
+    #     dominant = int(np.argmax(np.bincount(predictions)))
+    #     # Convert the numeric prediction to a label string using the descriptor mapping.
+    #     label_str = id_to_dataset(self.dataset_map, dominant)
+    #     # Update label queue if the new label is different from the last.
+    #     if self.label_queue and self.label_queue[-1] == label_str:
+    #         return
+    #     self.label_queue.append(label_str)
+    #     max_queue_len = self.label_queue_length_spin.value()
+    #     if len(self.label_queue) > max_queue_len:
+    #         self.label_queue = self.label_queue[-max_queue_len:]
+    #     highlighted_labels = [
+    #         f'<span style="color:{name_to_color(label)}">{label}</span>'
+    #         for label in self.label_queue
+    #     ]
+    #     self.label_display.setText(" | ".join(highlighted_labels))
+
     @pyqtSlot(object, float)
     def handle_inference_result(self, predictions, elapsed):
         if elapsed > 0:
@@ -435,17 +509,37 @@ class MainWindow(QMainWindow):
                 self.max_inference_label.setText(f"Max Inference Speed: {self.inference_max_speed:.2f} Hz")
         if len(predictions) == 0:
             return
-        # Use majority vote on predictions.
-        dominant = int(np.argmax(np.bincount(predictions)))
-        # Convert the numeric prediction to a label string using the descriptor mapping.
-        label_str = id_to_dataset(self.dataset_map, dominant)
-        # Update label queue if the new label is different from the last.
-        if self.label_queue and self.label_queue[-1] == label_str:
-            return
-        self.label_queue.append(label_str)
+        
+        # Identify continuous sections of at least 10 identical predictions.
+        continuous_labels = []
+        current_label = predictions[0]
+        count = 1
+        print("preds")
+        for pred in predictions[1:]:
+            # print(pred)
+            if pred == current_label:
+                count += 1
+            else:
+                if count >= 10:
+                    continuous_labels.append(current_label)
+                current_label = pred
+                count = 1
+        if count >= 10:
+            continuous_labels.append(current_label)
+        
+        # Update label queue with new labels from continuous sections.
+        for label in continuous_labels:
+            label_str = id_to_dataset(self.dataset_map, label)
+            if self.label_queue and self.label_queue[-1] == label_str:
+                continue
+            self.label_queue.append(label_str)
+        
+        # Trim label queue to the maximum allowed length.
         max_queue_len = self.label_queue_length_spin.value()
         if len(self.label_queue) > max_queue_len:
             self.label_queue = self.label_queue[-max_queue_len:]
+        
+        # Update the label display with highlighted labels.
         highlighted_labels = [
             f'<span style="color:{name_to_color(label)}">{label}</span>'
             for label in self.label_queue
