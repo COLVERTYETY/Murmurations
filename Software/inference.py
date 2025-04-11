@@ -62,7 +62,7 @@ def name_to_color(name, s=0.7, v=0.95):
 
 # Constants for socket communication.
 ESP32_DEFAULT_IP = "10.42.0.24"
-PORT = 5000
+PORT = 5001
 HEADER_FORMAT = "<BBHQ"  # source (1B), reserved (1B), length (2B), timestamp (8B)
 HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
 
@@ -110,7 +110,7 @@ class InferenceWorker(QObject):
     def __init__(self):
         super().__init__()
         # Load the descriptor (hardcoded path)
-        descriptor_path = "train_descriptor.json"
+        descriptor_path = "../data/train_descriptor.json"
         self.descriptor = load_descriptor(descriptor_path)
         self.dataset_map = self.descriptor['dataset_mapping']
         
@@ -120,7 +120,7 @@ class InferenceWorker(QObject):
         self.normalizer = normalizer(mean=adc_mean, std=adc_std, augment=False)
         
         # Load the ONNX model (hardcoded path)
-        onnx_model_path = "best_v1dTransformer59.onnx"
+        onnx_model_path = "../data/best_v1dTransformer59.onnx"
         available_providers = ort.get_available_providers()
         print("\nAvailable providers:", available_providers, "\n")
         providers = ['CoreMLExecutionProvider','CUDAExecutionProvider', 'CPUExecutionProvider']
@@ -244,7 +244,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Live Inference")
         
         # Load the descriptor for dataset mapping and normalization.
-        descriptor_path = "train_descriptor.json"
+        descriptor_path = "../data/train_descriptor.json"
         with open(descriptor_path, 'r') as f:
             self.descriptor = json.load(f)
         self.dataset_map = self.descriptor['dataset_mapping']
