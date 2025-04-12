@@ -31,7 +31,7 @@ ch2c = {
 
 # Constants
 ESP32_DEFAULT_IP = "10.42.0.24"
-PORT = 5000
+PORT = 5001
 HEADER_FORMAT = "<BBHQ"  # source (1B), reserved (1B), length (2B), timestamp (8B)
 HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
 
