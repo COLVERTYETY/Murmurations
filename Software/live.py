@@ -34,6 +34,7 @@ class DataRecordThread(QThread):
       - data_ts: the timestamp from the incoming data,
       - source: the source (0 for audio, 1 for ADC),
       - channels: for ADC records, a string describing the number of samples
+
           per channel (e.g. "ch0:10, ch1:15"); for audio records this is empty.
       - data: a variable-length array of int16 samples;
           for ADC records, the samples from each channel (sorted by channel)
@@ -207,7 +208,7 @@ class DataReceiverThread(QThread):
                         adc_channels = {}
                         for s_val in samples:
                             ch = (s_val >> 12) & 0xF
-                            val = s_val & 0xFFF 
+                            val = s_val & 0xFFF
                             adc_channels.setdefault(ch, []).append(val)
                         # print("ADC channels:", adc_channels)
                         data = adc_channels
@@ -266,15 +267,15 @@ class MainWindow(QMainWindow):
         self.adc_plot = pg.PlotWidget(title="ADC Data (Source=1)")
         self.adc_plot.addLegend()
         self.adc_curves = {}  # channel -> plot curve
-        
+
 
         # Controls.
         self.ip_edit = QLineEdit(ESP32_DEFAULT_IP)
         self.connect_button = QPushButton("Connect")
         self.connect_button.clicked.connect(self.toggle_connection)
-        
-        #data recording 
-        
+
+        #data recording
+
         self.recording = False
         self.record_button = QPushButton("Record")
         self.record_button.clicked.connect(self.toggle_recording)
@@ -294,7 +295,7 @@ class MainWindow(QMainWindow):
         self.decimation_spin.setSingleStep(5)
         self.decimation_spin.setValue(self.decimation_factor)
         self.decimation_spin.valueChanged.connect(self.change_decimation)
-        
+
 
         #spinbox for maximum number of samples to display
         self.max_samples_spin = QSpinBox()
@@ -461,7 +462,7 @@ class MainWindow(QMainWindow):
                 # self.adc_curves[ch] = self.adc_plot.plot(decimated_x, decimated_y, pen=None, name=f"Ch {ch}")
             else:
                 self.adc_curves[ch].setData(decimated_x, decimated_y)
-        
+
 
 
 if __name__ == "__main__":
